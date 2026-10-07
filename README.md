@@ -319,15 +319,16 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 │   │   ├── duplicate/             # DuplicateDetector (privacy-preserving duplicate detection)
 │   │   ├── SecurityValidationService.ts # Central Security Gateway
 │   │   └── index.ts               # Barrel export
-│   └── storage/                   # Hardened file system storage service for uploads
+│   └── storage/                   # Runtime temporary & storage abstraction service for uploads
 ├── public/
 │   ├── prisma/
 │   │   └── schema.prisma          # Relational Prisma Domain Schema with Provenance & Fingerprints
-│   └── uploads/                   # Stored user uploads
+│   └── uploads/                   # Local development user uploads
 ├── scripts/
 │   ├── seed.ts                    # Database seed script
 │   ├── test_phase2.ts             # Phase 2 test suite
 │   ├── test-security.ts           # Phase 3A Security test suite (Groups A through J)
+│   ├── test-storage-lifecycle.ts  # Storage Service & Temporary File Lifecycle test suite
 │   └── test-provenance.ts         # Phase 3B Provenance test suite (Scenarios 1 through 10)
 ├── package.json                   # NPM dependencies and scripts
 └── tsconfig.json                  # TypeScript configuration
@@ -417,6 +418,12 @@ A centralized cybersecurity security layer sits at the ingestion boundary of the
 - **Document Safety Inspection (`DocumentSecurityValidator`)**:
   - **PDF**: Inspects syntax for embedded JavaScript (`/JavaScript`, `/JS`), process launch actions (`/Launch`), embedded files (`/EmbeddedFiles`), and suspicious external URIs without executing any scripts.
   - **DOCX / PPTX**: Inspects OpenXML archives for VBA macros (`vbaProject.bin`, `vbaData.xml`), embedded executables, and suspicious external relationships.
+- **Serverless File Storage & Temporary Lifecycle (`lib/storage`)**:
+  - **Runtime Temporary Directory**: In production/serverless environments where `/var/task` is read-only, temporary processing uses `os.tmpdir()`.
+  - **Collision-Resistant Filenames**: Generates isolated temporary names via `crypto.randomUUID() + '-' + sanitizedFilename`.
+  - **Path Traversal Boundary Enforcement**: Enforces path resolution checks ensuring temporary files remain strictly bounded within `os.tmpdir()`.
+  - **Guaranteed Cleanup**: Uses `try ... finally` blocks to ensure temporary files are unlinked after request processing succeeds or fails, with graceful `ENOENT` handling.
+  - **Storage Abstraction**: Configurable persistent storage (`STORAGE_PROVIDER=s3` with `S3_BUCKET`) and local dev fallback (`public/uploads`) without throwing `EROFS` in read-only environments.
 
 ---
 
@@ -579,7 +586,7 @@ The platform implements an immutable content provenance architecture. Every fina
 
 ## 🧪 Testing & Verification
 
-Run the complete test suite (Phase 3A Security + Phase 3B Provenance):
+Run the complete test suite (Security + Storage Lifecycle + Provenance):
 ```bash
 npm run test:all
 ```
@@ -588,6 +595,9 @@ Or run test suites individually:
 ```bash
 # Phase 3A Security Ingestion Suite (49 tests)
 npm test
+
+# Storage Service & Temporary File Lifecycle Suite (23 tests)
+npm run test:storage
 
 # Phase 3B Provenance & Fingerprinting Suite (30 tests)
 npm run test:provenance

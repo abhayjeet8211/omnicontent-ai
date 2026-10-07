@@ -1,22 +1,41 @@
 import { NextResponse } from 'next/server';
 import { parseDocumentBuffer } from '@/lib/parsers/document';
-import { saveUploadedFile } from '@/lib/storage';
+import { saveUploadedFile, createTemporaryFile, cleanupTempFile } from '@/lib/storage';
 import { SecurityValidationService } from '@/lib/security';
 import { getCurrentUser } from '@/lib/auth/session';
 
 export async function POST(req: Request) {
+  let tempPath: string | null = null;
+
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const projectId = (formData.get('projectId') as string) || undefined;
 
-    if (!file) {
+    if (!file || typeof file.arrayBuffer !== 'function') {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
     const user = await getCurrentUser().catch(() => null);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // Write file to temporary runtime directory os.tmpdir()
+    try {
+      tempPath = await createTemporaryFile(buffer, file.name);
+    } catch (err: unknown) {
+      console.error('Temporary storage write failed:', err);
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'STORAGE_ERROR',
+            message: 'Unable to temporarily store the uploaded file.',
+          },
+        },
+        { status: 500 }
+      );
+    }
 
     // 1. Central Security Gateway Validation
     const securityResult = await SecurityValidationService.validateUploadedFile(
@@ -48,7 +67,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Save using sanitized filename & detected MIME type
+    // 2. Save using sanitized filename & detected MIME type (persistent storage abstraction)
     const safeFilename = securityResult.scanResult.sanitizedFilename;
     const safeMime = securityResult.scanResult.detectedMimeType;
     const stored = await saveUploadedFile(buffer, safeFilename, safeMime);
@@ -74,5 +93,10 @@ export async function POST(req: Request) {
       { error: err instanceof Error ? err.message : 'Failed to process file upload' },
       { status: 500 }
     );
+  } finally {
+    if (tempPath) {
+      await cleanupTempFile(tempPath);
+    }
   }
 }
+
