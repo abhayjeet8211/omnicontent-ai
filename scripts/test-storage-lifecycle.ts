@@ -159,14 +159,14 @@ async function runStorageLifecycleTests() {
   // -------------------------------------------------------------
   console.log('\n\x1b[36m[Test 6] Storage Abstraction Production Fallback\x1b[0m');
   const prevEnv = process.env.NODE_ENV;
-  process.env.NODE_ENV = 'production';
+  (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
 
   try {
     const prodResult = await saveUploadedFile(sampleBuffer, 'report.pdf', 'application/pdf');
     assert(!prodResult.url.includes('/var/task/public/uploads'), 'Production URL does not use /var/task/public/uploads');
     assert(!!prodResult.url, `Production URL generated safely: ${prodResult.url}`);
   } finally {
-    process.env.NODE_ENV = prevEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV = prevEnv;
   }
 
   console.log('\n============================================================');
